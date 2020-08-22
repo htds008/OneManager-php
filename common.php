@@ -1,8 +1,15 @@
 <?php
 
+global $Base64Env;
+global $CommonEnv;
+global $ShowedCommonEnv;
+global $InnerEnv;
+global $ShowedInnerEnv;
+global $Base64Env;
+global $timezones;
+
 $Base64Env = [
     //'APIKey', // used in heroku.
-    //'Region', // used in SCF.
     //'SecretId', // used in SCF.
     //'SecretKey', // used in SCF.
     //'AccessKeyID', // used in FC.
@@ -12,7 +19,9 @@ $Base64Env = [
     //'HW_secret', // used in FG.
     //'admin',
     //'adminloginpage',
+    //'autoJumpFirstDisk',
     'background',
+    'backgroundm',
     'diskname',
     //'disableShowThumb',
     //'disableChangeTheme',
@@ -47,7 +56,6 @@ $Base64Env = [
 
 $CommonEnv = [
     'APIKey', // used in heroku.
-    'Region', // used in SCF.
     'SecretId', // used in SCF.
     'SecretKey', // used in SCF.
     'AccessKeyID', // used in FC.
@@ -57,7 +65,9 @@ $CommonEnv = [
     'HW_secret', // used in FG.
     'admin',
     'adminloginpage',
+    'autoJumpFirstDisk',
     'background',
+    'backgroundm',
     'disktag',
     'disableShowThumb',
     'disableChangeTheme',
@@ -74,7 +84,6 @@ $CommonEnv = [
 
 $ShowedCommonEnv = [
     //'APIKey', // used in heroku.
-    //'Region', // used in SCF.
     //'SecretId', // used in SCF.
     //'SecretKey', // used in SCF.
     //'AccessKeyID', // used in FC.
@@ -84,7 +93,9 @@ $ShowedCommonEnv = [
     //'HW_secret', // used in FG.
     //'admin',
     'adminloginpage',
+    'autoJumpFirstDisk',
     'background',
+    'backgroundm',
     //'disktag',
     'disableShowThumb',
     'disableChangeTheme',
@@ -218,14 +229,14 @@ function main($path)
         }
         if (getConfig('admin')!='') {
             if ($_POST['password1']==getConfig('admin')) {
-                return adminform('admin',md5($_POST['password1']),$url);
+                return adminform('admin', pass2cookie('admin', $_POST['password1']), $url);
             } else return adminform();
         } else {
             return output('', 302, [ 'Location' => $url ]);
         }
     }
     if (getConfig('admin')!='')
-        if ( isset($_COOKIE['admin'])&&$_COOKIE['admin']==md5(getConfig('admin')) ) {
+        if ( isset($_COOKIE['admin'])&&$_COOKIE['admin']==pass2cookie('admin', getConfig('admin')) ) {
             $_SERVER['admin']=1;
             $_SERVER['needUpdate'] = needUpdate();
         } else {
@@ -240,11 +251,25 @@ function main($path)
             return output('<script>alert(\''.getconstStr('SetSecretsFirst').'\');</script>', 302, [ 'Location' => $url ]);
         }
 
+    $_SERVER['sitename'] = getConfig('sitename');
+    if (empty($_SERVER['sitename'])) $_SERVER['sitename'] = getconstStr('defaultSitename');
     $_SERVER['base_disk_path'] = $_SERVER['base_path'];
     $disktags = explode("|",getConfig('disktag'));
 //    echo 'count$disk:'.count($disktags);
     if (count($disktags)>1) {
-        if ($path=='/'||$path=='') return output('', 302, [ 'Location' => path_format($_SERVER['base_path'].'/'.$disktags[0].'/') ]);
+        if ($path=='/'||$path=='') {
+            $files['folder']['childCount'] = count($disktags);
+            foreach ($disktags as $disktag) {
+                $files['children'][$disktag]['folder'] = 1;
+                $files['children'][$disktag]['name'] = $disktag;
+            }
+            if ($_GET['json']) {
+                // return a json
+                return files_json($files);
+            }
+            if (getConfig('autoJumpFirstDisk')) return output('', 302, [ 'Location' => path_format($_SERVER['base_path'].'/'.$disktags[0].'/') ]);
+            return render_list($path, $files);
+        }
         $_SERVER['disktag'] = splitfirst( substr(path_format($path), 1), '/' )[0];
         //$pos = strpos($path, '/');
         //if ($pos>1) $_SERVER['disktag'] = substr($path, 0, $pos);
@@ -371,7 +396,11 @@ function main($path)
                     $url = proxy_replace_domain($url, $domainforproxy);
                 }
                 if ( strtolower(splitlast($files['name'],'.')[1])=='html' ) return output($files['content']['body'], $files['content']['stat']);
-                else return output('', 302, [ 'Location' => $url ]);
+                else {
+                    if ($_SERVER['HTTP_RANGE']!='') $header['Range'] = $_SERVER['HTTP_RANGE'];
+                    $header['Location'] = $url;
+                    return output('', 302, $header);
+                }
             }
         }
         if ( isset($files['folder']) || isset($files['file']) ) {
@@ -385,6 +414,11 @@ function main($path)
             return message('<a href="'.$_SERVER['base_path'].'">'.getconstStr('Back').getconstStr('Home').'</a><div style="margin:8px;"><pre>' . $files['error']['message'] . '</pre></div><a href="javascript:history.back(-1)">'.getconstStr('Back').'</a>', $files['error']['code'], $files['error']['stat']);
         }
     }
+}
+
+function pass2cookie($name, $pass)
+{
+    return md5($name . ':' . md5($pass));
 }
 
 function proxy_replace_domain($url, $domainforproxy)
@@ -432,7 +466,7 @@ function files_json($files)
             array_push($tmp['list'], $tmp1);
         }
     } else return output('', 404);
-    return output(json_encode($tmp));
+    return output(json_encode($tmp), 200, ['Content-Type' => 'application/json']);
 }
 
 function get_access_token($refresh_token)
@@ -519,14 +553,32 @@ function isHideFile($name)
 
 function getcache($str)
 {
-    $cache = new \Doctrine\Common\Cache\FilesystemCache(sys_get_temp_dir(), __DIR__.'/Onedrive/'.$_SERVER['disktag']);
+    $cache = filecache();
     return $cache->fetch($str);
 }
 
 function savecache($key, $value, $exp = 1800)
 {
-    $cache = new \Doctrine\Common\Cache\FilesystemCache(sys_get_temp_dir(), __DIR__.'/Onedrive/'.$_SERVER['disktag']);
-    $cache->save($key, $value, $exp);
+    $cache = filecache();
+    return $cache->save($key, $value, $exp);
+}
+
+function filecache()
+{
+    $dir = sys_get_temp_dir();
+    if (!is_writable($dir)) {
+        if ( is_writable(__DIR__ . '/tmp/') ) $dir = __DIR__ . '/tmp/';
+        if ( mkdir(__DIR__ . '/tmp/', 0777) ) $dir = __DIR__ . '/tmp/';
+    }
+    $tag = __DIR__ . '/OneManager/' . $_SERVER['disktag'];
+    while (strpos($tag, '/')>-1) $tag = str_replace('/', '_', $tag);
+    if (strpos($tag, ':')>-1) {
+        while (strpos($tag, ':')>-1) $tag = str_replace(':', '_', $tag);
+        while (strpos($tag, '\\')>-1) $tag = str_replace('\\', '_', $tag);
+    }
+    // error_log('DIR:' . $dir . ' TAG: ' . $tag);
+    $cache = new \Doctrine\Common\Cache\FilesystemCache($dir, $tag);
+    return $cache;
 }
 
 function getconstStr($str)
@@ -538,8 +590,6 @@ function getconstStr($str)
 
 function config_oauth()
 {
-    $_SERVER['sitename'] = getConfig('sitename');
-    if (empty($_SERVER['sitename'])) $_SERVER['sitename'] = getconstStr('defaultSitename');
     $_SERVER['redirect_uri'] = 'https://scfonedrive.github.io';
     if (getConfig('Drive_ver')=='shareurl') {
         $_SERVER['api_url'] = getConfig('shareapiurl');
@@ -674,6 +724,42 @@ function is_guestup_path($path)
 function array_value_isnot_null($arr)
 {
     return $arr!=='';
+}
+
+function curl($method, $url, $data = '', $headers = [], $returnheader = 0)
+{
+    //if (!isset($headers['Accept'])) $headers['Accept'] = '*/*';
+    //if (!isset($headers['Referer'])) $headers['Referer'] = $url;
+    //if (!isset($headers['Content-Type'])) $headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    $sendHeaders = array();
+    foreach ($headers as $headerName => $headerVal) {
+        $sendHeaders[] = $headerName . ': ' . $headerVal;
+    }
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST,$method);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_HEADER, $returnheader);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $sendHeaders);
+    //$response['body'] = curl_exec($ch);
+    if ($returnheader) {
+        list($returnhead, $response['body']) = explode("\r\n\r\n", curl_exec($ch));
+        foreach (explode("\r\n", $returnhead) as $head) {
+            $tmp = explode(': ', $head);
+            $heads[$tmp[0]] = $tmp[1];
+        }
+        $response['returnhead'] = $heads;
+    } else {
+        $response['body'] = curl_exec($ch);
+    }
+    $response['stat'] = curl_getinfo($ch,CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $response;
 }
 
 function curl_request($url, $data = false, $headers = [], $returnheader = 0)
@@ -1450,12 +1536,17 @@ function get_refresh_token()
             $tmptoken['refresh_token'] = $refresh_token;
             $tmptoken['token_expires'] = time()+7*24*60*60;
             if (getConfig('usesharepoint')=='on') $tmptoken['siteid'] = get_siteid($ret['access_token']);
-            setConfig($tmptoken, $_COOKIE['disktag']);
-            savecache('access_token', $ret['access_token'], $ret['expires_in'] - 60);
-            //WaitSCFStat();
-            $str .= '
-            <meta http-equiv="refresh" content="5;URL=' . $url . '">';
-            return message($str, getconstStr('WaitJumpIndex'));
+            $response = setConfigResponse( setConfig($tmptoken, $_COOKIE['disktag']) );
+            if (api_error($response)) {
+                $html = api_error_msg($response);
+                $title = 'Error';
+                return message($html, $title, 201);
+            } else {
+                savecache('access_token', $ret['access_token'], $ret['expires_in'] - 60);
+                $str .= '
+                <meta http-equiv="refresh" content="5;URL=' . $url . '">';
+                return message($str, getconstStr('WaitJumpIndex'));
+            }
         }
         return message('<pre>' . json_encode(json_decode($tmp['body']), JSON_PRETTY_PRINT) . '</pre>', $tmp['stat']);
         //return message('<pre>' . json_encode($ret, JSON_PRETTY_PRINT) . '</pre>', 500);
@@ -1521,12 +1612,12 @@ function get_refresh_token()
         }
     }
 
-    if ($constStr['language']!='zh-cn') {
-        $linklang='en-us';
-    } else $linklang='zh-cn';
-    $ru = "https://developer.microsoft.com/".$linklang."/graph/quick-start?appID=_appId_&appName=_appName_&redirectUrl=".$_SERVER['redirect_uri']."&platform=option-php";
-    $deepLink = "/quickstart/graphIO?publicClientSupport=false&appName=OneManager&redirectUrl=".$_SERVER['redirect_uri']."&allowImplicitFlow=false&ru=".urlencode($ru);
-    $app_url = "https://apps.dev.microsoft.com/?deepLink=".urlencode($deepLink);
+    //if ($constStr['language']!='zh-cn') {
+    //    $linklang='en-us';
+    //} else $linklang='zh-cn';
+    //$ru = "https://developer.microsoft.com/".$linklang."/graph/quick-start?appID=_appId_&appName=_appName_&redirectUrl=".$_SERVER['redirect_uri']."&platform=option-php";
+    //$deepLink = "/quickstart/graphIO?publicClientSupport=false&appName=OneManager&redirectUrl=".$_SERVER['redirect_uri']."&allowImplicitFlow=false&ru=".urlencode($ru);
+    //$app_url = "https://apps.dev.microsoft.com/?deepLink=".urlencode($deepLink);
     $html = '
 <div>
     <form action="?AddDisk&install0" method="post" onsubmit="return notnull(this);">
@@ -1534,7 +1625,7 @@ function get_refresh_token()
         '.getconstStr('OnedriveDiskName').':<input type="text" name="diskname" placeholder="' . getconstStr('EnvironmentsDescription')['diskname'] . '" style="width:100%"><br>
         <br>
         <div>
-            <label><input type="radio" name="Drive_ver" value="MS" checked onclick="document.getElementById(\'morecustom\').style.display=\'\';document.getElementById(\'inputshareurl\').style.display=\'none\';">MS: '.getconstStr('DriveVerMS').'</label><br>
+            <label><input type="radio" name="Drive_ver" value="MS" onclick="document.getElementById(\'morecustom\').style.display=\'\';document.getElementById(\'inputshareurl\').style.display=\'none\';">MS: '.getconstStr('DriveVerMS').'</label><br>
             <label><input type="radio" name="Drive_ver" value="CN" onclick="document.getElementById(\'morecustom\').style.display=\'\';document.getElementById(\'inputshareurl\').style.display=\'none\';">CN: '.getconstStr('DriveVerCN').'</label><br>
             <label><input type="radio" name="Drive_ver" value="shareurl" onclick="document.getElementById(\'inputshareurl\').style.display=\'\';document.getElementById(\'morecustom\').style.display=\'none\';">ShareUrl: '.getconstStr('DriveVerShareurl').'</label><br>
         </div>
@@ -1543,12 +1634,12 @@ function get_refresh_token()
             '.getconstStr('UseShareLink').'
             <input type="text" name="shareurl" style="width:100%" placeholder="https://xxxx.sharepoint.com/:f:/g/personal/xxxxxxxx/mmmmmmmmm?e=XXXX"><br>
         </div>
-        <div id="morecustom">
+        <div id="morecustom" style="display:none;">
             <label><input type="checkbox" name="Drive_custom" onclick="document.getElementById(\'secret\').style.display=(this.checked?\'\':\'none\');">'.getconstStr('CustomIdSecret').'</label><br>
             <div id="secret" style="display:none;margin:10px 35px">
-                <a href="'.$app_url.'" target="_blank">'.getconstStr('GetSecretIDandKEY').'</a><br>
+                return uri: https://scfonedrive.github.io/<br>
+                client_id:<input type="text" name="client_id" placeholder="a1b2c345-90ab-cdef-ghij-klmnopqrstuv"><br>
                 client_secret:<input type="text" name="client_secret"><br>
-                client_id:<input type="text" name="client_id" placeholder="12345678-90ab-cdef-ghij-klmnopqrstuv"><br>
             </div>
             <label><input type="checkbox" name="usesharepoint" onclick="document.getElementById(\'sharepoint\').style.display=(this.checked?\'\':\'none\');">'.getconstStr('UseSharepointInstead').'</label><br>
             <div id="sharepoint" style="display:none;margin:10px 35px">
@@ -1617,7 +1708,7 @@ function EnvOpt($needUpdate = 0)
     asort($ShowedInnerEnv);
     $html = '<title>OneManager '.getconstStr('Setup').'</title>';
     if (isset($_POST['updateProgram'])&&$_POST['updateProgram']==getconstStr('updateProgram')) {
-        $response = OnekeyUpate($_POST['auth'], $_POST['project'], $_POST['branch']);
+        $response = setConfigResponse(OnekeyUpate($_POST['auth'], $_POST['project'], $_POST['branch']));
         if (api_error($response)) {
             $html = api_error_msg($response);
             $title = 'Error';
@@ -1773,6 +1864,8 @@ function EnvOpt($needUpdate = 0)
     } elseif (isset($_SERVER['HEROKU_APP_DIR'])&&$_SERVER['HEROKU_APP_DIR']==='/app') {
         $canOneKeyUpate = 1;
     } elseif (isset($_SERVER['FC_SERVER_PATH'])&&$_SERVER['FC_SERVER_PATH']==='/var/fc/runtime/php7.2') {
+        $canOneKeyUpate = 1;
+    } elseif ($_SERVER['BCE_CFC_RUNTIME_NAME']=='php7') {
         $canOneKeyUpate = 1;
     } elseif ($_SERVER['_APP_SHARE_DIR']==='/var/share/CFF/processrouter') {
         $canOneKeyUpate = 1;
@@ -2418,9 +2511,17 @@ function render_list($path = '', $files = '')
         $html = $tmp[0];
         $tmp = splitfirst($tmp[1], '<!--BackgroundEnd-->');
         if (getConfig('background')) {
-            $background = str_replace('<!--BackgroundUrl-->', getConfig('background'), $tmp[0]);
+            $html .= str_replace('<!--BackgroundUrl-->', getConfig('background'), $tmp[0]);
         }
-        $html .= $background . $tmp[1];
+        $html .= $tmp[1];
+
+        $tmp = splitfirst($html, '<!--BackgroundMStart-->');
+        $html = $tmp[0];
+        $tmp = splitfirst($tmp[1], '<!--BackgroundMEnd-->');
+        if (getConfig('backgroundm')) {
+            $html .= str_replace('<!--BackgroundMUrl-->', getConfig('backgroundm'), $tmp[0]);
+        }
+        $html .=  $tmp[1];
 
         $tmp = splitfirst($html, '<!--PathArrayStart-->');
         $html = $tmp[0];

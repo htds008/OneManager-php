@@ -1,5 +1,8 @@
 <?php
 
+global $exts;
+global $constStr;
+
 $exts['img'] = ['ico', 'bmp', 'gif', 'jpg', 'jpeg', 'jpe', 'jfif', 'tif', 'tiff', 'png', 'heic', 'webp'];
 $exts['music'] = ['mp3', 'wma', 'flac', 'ape', 'wav', 'ogg', 'm4a'];
 $exts['office'] = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
@@ -66,6 +69,7 @@ $constStr = [
         'en-us' => [
             'admin' => 'The admin password, Login button will not show when empty',
             'adminloginpage' => 'if set, the Login button will not display, and the login page no longer \'?admin\', it is \'?{this value}\'.',
+            'autoJumpFirstDisk' => 'used in multy disks, if 1, auto jump to first disk',
             'customScript' => '<script> in all pages, e.g. http turn to https',
             'customCss' => '<style> in <head>',
             'customTheme' => 'an url of html',
@@ -76,6 +80,7 @@ $constStr = [
             'disableChangeTheme' => 'if 1, the Theme selection button will not display',
             'downloadencrypt' => '0 or 1. if 1, the files in encrypt folder can be downloaded without password',
             'background' => 'Set an url as background photo.',
+            'backgroundm' => 'Set an url as background in mobile phone.',
             'theme' => 'Select theme.',
             'timezone' => 'Set default timezone.',
             'guestup_path' => 'Set guest upload dir, before set this, the files in this dir will show as normal.',
@@ -89,6 +94,7 @@ $constStr = [
         'zh-cn' => [
             'admin' => '管理密码，不添加时不显示登录页面且无法登录。',
             'adminloginpage' => '如果设置，登录按钮及页面隐藏。管理登录的页面不再是\'?admin\'，而是\'?此设置的值\'。',
+            'autoJumpFirstDisk' => '用于多盘，如果设1，将会自动跳到第一个盘。',
             'customScript' => '<script>，在所有页都会存在,例如放一个http跳转https',
             'customCss' => '<style>，在<head>最后面',
             'customTheme' => 'html格式的主题的url',
@@ -99,6 +105,7 @@ $constStr = [
             'disableChangeTheme' => '如果填 1, 主题选择切换将被隐藏',
             'downloadencrypt' => '0 或 1。如果 1, 那加密目录内的文件可以不需要密码就能下载。',
             'background' => '设置一个url作为背景。',
+            'backgroundm' => '设置一个url作为手机用的背景。',
             'theme' => '选择一个主题。',
             'timezone' => '设置默认时区。',
             'guestup_path' => '设置游客上传路径（图床路径），不设置这个值时该目录内容会正常列文件出来，设置后只有上传界面，不显示其中文件（登录后显示）。',
@@ -788,5 +795,13 @@ $constStr = [
     'QueryBranchs' => [
         'en-us' => 'Query Branchs',
         'zh-cn' => '查询分支',
+    ],
+    'ONEMANAGER_CONFIG_SAVE_ENV' => [
+        'en-us' => 'Config save in Environments',
+        'zh-cn' => '配置保存在环境变量',
+    ],
+    'ONEMANAGER_CONFIG_SAVE_FILE' => [
+        'en-us' => 'Config save in code file, may cause fee',
+        'zh-cn' => '配置保存在代码文件中，可能产生费用',
     ],
 ];
